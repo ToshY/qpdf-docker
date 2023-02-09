@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+  schedule:
+    - cron: '0 3 * * 0'
+
+env:
+  DOCKER_IMAGE: t0shy/qpdf-docker
+
+jobs:
+  check:
+    name: Check latest release
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.early.outputs.status }}
+      qpdf_version: ${{ steps.version.outputs.qpdf_version }}
+    steps:
+      - id: version
+        name: Get latest QPDF version
+        run: >
+          echo "qpdf_version=$(echo $(curl -s https://api.github.com/repos/qpdf/qpdf/releases/latest) | grep -o '"tag_name": "[^"]*' | grep -o '[^"v]*$')" >> $GITHUB_OUTPUT
+
+      - id: early
+        name: Early exit if image exists
+        run: |
+          http_code="$(curl -LI https://hub.docker.com/v2/repositories/${{ env.DOCKER_IMAGE }}/tags/${{ steps.version.outputs.qpdf_version }} -o /dev/null -w '%{http_code}\n' -s)"
+          status="deploy"
+          if [[ "$http_code" == 200 ]]; then
+            status="skip"
+            echo "Image for QPDF version ${{ steps.version.outputs.qpdf_version }} already exists"
+          fi
+          echo "status=$status" >> $GITHUB_OUTPUT
+  release:
+    name: Build & Push image
+    needs: check
+    runs-on: ubuntu-latest
+    if: needs.check.outputs.status == 'deploy'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ needs.check.outputs.qpdf_version }}
+
+      - name: Build & Push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          build-args: |
+            QPDF_VERSION=${{ needs.check.outputs.qpdf_version }}
+          push: true
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
