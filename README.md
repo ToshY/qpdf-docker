@@ -53,6 +53,16 @@ For detailed help, visit the qpdf manual: https://qpdf.readthedocs.io
 
 > Note: make sure to mount to the `/pdf` directory on the container.
 
+## Examples
+
+Merge PDFs using wildcard character `*`.
+
+```shell
+docker run -it --rm -v $(pwd)/files:/pdf --entrypoint /bin/sh t0shy/qpdf-docker:latest -c 'qpdf --empty --pages *.pdf -- result.pdf'
+```
+
+> Note: Entrypoint is changed to `/bin/sh` and supplying command with `-c`, as wildcard character `*` is interpreted by shell.
+
 ## ❕ License
 
 This repository comes with a [MIT license](./LICENSE).
